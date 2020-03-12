@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  labels:
+    app: traefik
+  name: kubernetes-dashboard
+  namespace: traefik
+spec:
+  entryPoints:
+  - web
+  - websecure
+  routes:
+  - kind: Rule
+    match: Host(`dashk8s.demo.local`) && PathPrefix(`/`)
+    middlewares:
+    - name: redirectscheme
+    priority: 0
+    services:
+    - kind: Service
+      name: kubernetes-dashboard
+      namespace: kubernetes-dashboard
+      port: 443
+  tls:
+    certResolver: letsencrypt

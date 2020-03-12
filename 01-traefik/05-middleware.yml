@@ -1,0 +1,42 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: auth
+  namespace: traefik
+  labels:
+    app: traefik
+spec:
+  basicAuth:
+    secret: admin-auth
+
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: redirectscheme
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: "true"
+    port: 443
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: http-catch-all
+  namespace: traefik #case the Middleware has distinct namespace
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: HostRegexp(`{any:.+}`)
+    # - match: HostRegexp(`{host:.+}`)
+      kind: Rule
+      services:
+        - name: api@internal
+          kind: TraefikService
+          port: 80
+      middlewares:
+        - name: redirectscheme
+          namespace: traefik #case the Middleware has distinct namespace

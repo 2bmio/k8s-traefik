@@ -1,0 +1,292 @@
+apiVersion: v1
+data:
+  traefik.toml: |
+    [global]
+      checkNewVersion = false
+      sendAnonymousUsage = false
+    [serversTransport]
+      insecureSkipVerify = true
+    [entryPoints]
+      [entryPoints.web]
+        address = ":8000"
+      [entryPoints.websecure]
+        address = ":8443"
+      [entryPoints.traefik]
+        address = ":9000"
+    [log]
+      level = "ERROR"
+      format = "json"
+    [accessLog]
+      format = "json"
+    [api]
+      dashboard = true
+      debug = false
+      #insecure = true
+    [ping]
+    [providers]
+      [providers.file]
+        directory = "/conf.d/"
+        watch = true
+      [providers.kubernetesCRD]
+    [metrics]
+      [metrics.prometheus]
+        addEntryPointsLabels = true
+        addServicesLabels = true
+        entryPoint = "traefik"
+    [certificatesResolvers]
+      [certificatesResolvers.letsencrypt]
+        [certificatesResolvers.letsencrypt.acme]
+          email = "kuba@cometari.com"
+          storage = "/data/letsencrypt.json"
+          #caServer = "https://acme-v02.api.letsencrypt.org/directory"
+          [certificatesResolvers.letsencrypt.acme.tlsChallenge]
+      [certificatesResolvers.letsencrypt-staging]
+        [certificatesResolvers.letsencrypt-staging.acme]
+          email = "kuba@cometari.com"
+          storage = "/data/letsencrypt-staging.json"
+          caServer = "https://acme-staging-v02.api.letsencrypt.org/directory"
+          [certificatesResolvers.letsencrypt-staging.acme.tlsChallenge]
+kind: ConfigMap
+metadata:
+  labels:
+    app: traefik
+  name: traefik-config
+  namespace: traefik
+---
+apiVersion: v1
+data:
+  middlewares.toml: |
+    [http.middlewares]
+      [http.middlewares.default-headers.headers]
+        [http.middlewares.default-headers.headers.customResponseHeaders]
+          X-Powered-By = ""
+          Server = ""
+      [http.middlewares.security-headers.headers]
+        AccessControlAllowOrigin = "null"
+        AccessControlMaxAge = 60
+        BrowserXssFilter = true
+        ContentTypeNoSniff = true
+        ForceSTSHeader = true
+        FrameDeny = true
+        SSLRedirect = true
+        STSIncludeSubdomains = true
+        STSPreload = true
+        STSSeconds = 315360000
+        CustomFrameOptionsValue = "SAMEORIGIN"
+        ReferrerPolicy = "same-origin"
+        FeaturePolicy = "vibrate 'self'"
+  tls.toml: |
+    # TLS settings
+    [tls]
+      [tls.options]
+        [tls.options.default]
+          minVersion = "VersionTLS12"
+        [tls.options.mintls13]
+          minVersion = "VersionTLS13"
+kind: ConfigMap
+metadata:
+  labels:
+    app: traefik
+  name: traefik-custom
+  namespace: traefik
+---
+apiVersion: v1
+data:
+  userfile: YWRtaW46JGFwcjEkNzNweG91ajYkelNibWYxUzZ6N3BLb1lBLnJ0ZkpyMQ==
+kind: Secret
+metadata:
+  name: admin-auth
+  namespace: traefik
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: traefik
+  name: traefik
+  namespace: traefik
+spec:
+  ports:
+  - name: web
+    port: 80
+    targetPort: web
+  - name: websecure
+    port: 443
+    targetPort: websecure
+  selector:
+    app: traefik
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: traefik
+  name: traefik-dashboard
+  namespace: traefik
+spec:
+  ports:
+  - name: traefik
+    port: 9000
+    targetPort: traefik
+  selector:
+    app: traefik
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: traefik
+  name: traefik
+  namespace: traefik
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traefik
+  template:
+    metadata:
+      labels:
+        app: traefik
+    spec:
+      containers:
+      - args:
+        - --configFile=/config/traefik.toml
+        image: traefik:2.1.4
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ping
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
+        name: traefik
+        ports:
+        - containerPort: 8000
+          name: web
+          protocol: TCP
+        - containerPort: 8443
+          name: websecure
+          protocol: TCP
+        - containerPort: 9000
+          name: traefik
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /ping
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 300m
+            memory: 150Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /data
+          name: storage-volume
+        - mountPath: /config
+          name: traefik-config
+        - mountPath: /conf.d
+          name: traefik-custom
+      nodeSelector:
+        traefik: "true"
+      serviceAccountName: traefik
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: storage-volume
+        persistentVolumeClaim:
+          claimName: traefik-acme-storage
+      - configMap:
+          name: traefik-config
+        name: traefik-config
+      - configMap:
+          name: traefik-custom
+        name: traefik-custom
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: http-catch-all
+  namespace: traefik
+spec:
+  entryPoints:
+  - web
+  - websecure
+  routes:
+  - kind: Rule
+    match: HostRegexp(`{any:.+}`)
+    middlewares:
+    - name: redirectscheme
+      namespace: traefik
+    services:
+    - kind: TraefikService
+      name: api@internal
+      port: 80
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  labels:
+    app: traefik
+  name: traefik-dashboard
+  namespace: traefik
+spec:
+  entryPoints:
+  - web
+  - websecure
+  routes:
+  - kind: Rule
+    match: Host(`traefik.demo.local`)
+    middlewares:
+    - name: auth
+    services:
+    - kind: TraefikService
+      name: api@internal
+  tls:
+    certResolver: letsencrypt
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  labels:
+    app: traefik
+  name: auth
+  namespace: traefik
+spec:
+  basicAuth:
+    secret: admin-auth
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: redirectscheme
+spec:
+  redirectScheme:
+    permanent: "true"
+    port: 443
+    scheme: https
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: traefik
+    component: server
+  name: traefik-acme-storage
+  namespace: traefik
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi

@@ -1,0 +1,174 @@
+apiVersion: v1
+data:
+  nginx.conf: "user nginx;\nworker_processes auto;\nerror_log /dev/stderr;\npid /var/run/nginx.pid;\n\ninclude
+    /usr/share/nginx/modules/*.conf;\n\nevents {\n    worker_connections 1024;\n    use
+    epoll;\n    multi_accept on;\n}\n\nhttp {\n    log_format  main  '$remote_addr
+    - $remote_user [$time_local] \"$request\" '\n                      '$status $body_bytes_sent
+    \"$http_referer\" '\n                      '\"$http_user_agent\" \"$http_x_forwarded_for\"';\n\n
+    \   access_log  /dev/stdout  main;\n\n    client_max_body_size 8M;\n    sendfile
+    \           on;\n    tcp_nopush          on;\n    tcp_nodelay         on;\n    keepalive_timeout
+    \  65;\n    types_hash_max_size 2048;\n\n\n    gzip on;\n    gzip_disable msie6;\n
+    \   gzip_types text/plain text/css application/json application/javascript text/xml
+    application/xml application/xml+rss text/javascript image/svg+xml;\n\n    default_type
+    \       application/octet-stream;\n    upstream node-server {\n      server backend:3000;\n
+    \   }\n    server {\n        listen       80 default_server;\n        server_name
+    \ _;\n\n        include /etc/nginx/default.d/*.conf;\n    \t  location / {\n        set
+    $node               backend:3000;\n\t\t\t\tproxy_set_header        Host $host;\n\t\t\t\tproxy_set_header
+    \       X-Real-IP $remote_addr;\n\t\t\t\tproxy_set_header        X-Forwarded-For
+    $proxy_add_x_forwarded_for;\n\t\t\t\tproxy_set_header        X-Forwarded-Proto
+    $scheme;\n\t\t\t\tproxy_redirect          http:// https://;\n\t\t\t\tproxy_pass
+    \             http://node-server;\n\t\t}\n    }\n}\n"
+kind: ConfigMap
+metadata:
+  labels:
+    app: node-app
+  name: nginx-conf-node-app
+  namespace: default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: default
+spec:
+  ports:
+  - name: web
+    port: 3000
+    protocol: TCP
+  selector:
+    app: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-node
+  namespace: default
+spec:
+  ports:
+  - name: web
+    port: 80
+    protocol: TCP
+  selector:
+    app: nginx-node
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: backend
+  name: backend
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - image: jakubhajek/nodejs-backend:latest
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
+        name: backend
+        ports:
+        - containerPort: 3000
+          name: web
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 300m
+            memory: 150Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx-node
+  name: nginx-node
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-node
+  template:
+    metadata:
+      labels:
+        app: nginx-node
+    spec:
+      containers:
+      - image: nginx:1.17-alpine
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
+        name: nginx
+        ports:
+        - containerPort: 80
+          name: web
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 300m
+            memory: 150Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        volumeMounts:
+        - mountPath: /etc/nginx
+          name: nginx-conf
+      volumes:
+      - configMap:
+          name: nginx-conf-node-app
+        name: nginx-conf
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: nginx-node-app-ingress
+  namespace: default
+spec:
+  entryPoints:
+  - web
+  - websecure
+  routes:
+  - kind: Rule
+    match: Host(`who.demo.local`)
+    middlewares: null
+    services:
+    - name: nginx-node
+      port: 80
