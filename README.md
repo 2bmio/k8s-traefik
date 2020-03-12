@@ -62,7 +62,7 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-r
 
 kubectl apply -f 02-dashboard-k8s/00-AllTheWay.yaml
 
-## get the access token
+## get the token access 
 kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboard get secret | grep admin-user | awk '{print $1}')
 
 ```
