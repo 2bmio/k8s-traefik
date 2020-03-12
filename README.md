@@ -68,10 +68,14 @@ kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboar
 ```
 
 ### the playground for use this repo come from:
-https://github.com/jakubhajek/traefik-kubernetescrd
-https://github.com/GIT-VASS/kubernetesSpray-v1.16.6-glusterfs
+
++ https://github.com/jakubhajek/traefik-kubernetescrd
+
++ https://github.com/GIT-VASS/kubernetesSpray-v1.16.6-glusterfs
 
 ### special thanks:
-https://github.com/felix-centenera
-https://github.com/jakubhajek
+
++ https://github.com/felix-centenera
+
++ https://github.com/jakubhajek
 
