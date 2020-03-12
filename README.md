@@ -62,6 +62,16 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-r
 
 kubectl apply -f 02-dashboard-k8s/00-AllTheWay.yaml
 
+## get the access token
+kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboard get secret | grep admin-user | awk '{print $1}')
 
 ```
-<!-- kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboard get secret | grep admin-user | awk '{print $1}') -->
+
+### the playground for use this repo come from:
+https://github.com/jakubhajek/traefik-kubernetescrd
+https://github.com/GIT-VASS/kubernetesSpray-v1.16.6-glusterfs
+
+### special thanks:
+https://github.com/felix-centenera
+https://github.com/jakubhajek
+
